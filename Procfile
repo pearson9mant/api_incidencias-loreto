@@ -1,0 +1,1 @@
+web: uvicorn api_incidencias:app --host 0.0.0.0 --port 10000
