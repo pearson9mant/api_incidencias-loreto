@@ -206,6 +206,21 @@ def obtener_codigo_tipo(tipo_ot="INC"):
     return "INC"
 
 
+def detectar_tipo_ot(datos):
+    area_lower = str(datos.get("area", "")).strip().lower()
+    descripcion_lower = str(datos.get("descripcion", "")).strip().lower()
+
+    # Prioridad al campo estructurado
+    if area_lower == "legionella":
+        return "LEG"
+
+    # Respaldo para no romper lo que ya funciona
+    if "legionella" in descripcion_lower:
+        return "LEG"
+
+    return "INC"
+
+
 def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
     centro_codigo = obtener_codigo_centro(centro)
     tipo_codigo = obtener_codigo_tipo(tipo_ot)
@@ -248,11 +263,7 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
     cur = conn.cursor()
 
     try:
-        descripcion_lower = datos["descripcion"].lower()
-        area_lower = datos["area"].lower()
-
-        tipo_ot = "LEG" if "legionella" in descripcion_lower or "legionella" in area_lower else "INC"
-
+        tipo_ot = detectar_tipo_ot(datos)
         numero_ot = obtener_siguiente_numero_ot(cur, datos["centro"], tipo_ot)
 
         cur.execute(
