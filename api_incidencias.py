@@ -41,6 +41,72 @@ def conectar():
     return psycopg2.connect(database_url)
 
 
+def inicializar_db_api():
+    conn = conectar()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS ordenes_trabajo (
+                id SERIAL PRIMARY KEY,
+                numero_ot TEXT,
+                descripcion TEXT,
+                estado TEXT,
+                fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                centro TEXT,
+                edificio TEXT,
+                espacio TEXT,
+                area TEXT,
+                prioridad TEXT,
+                operario TEXT,
+                origen TEXT,
+                solicitante TEXT,
+                fecha_origen TEXT
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS historico_ordenes (
+                id SERIAL PRIMARY KEY,
+                numero_ot TEXT,
+                descripcion TEXT,
+                estado TEXT,
+                fecha_creacion TIMESTAMP,
+                centro TEXT,
+                edificio TEXT,
+                espacio TEXT,
+                area TEXT,
+                prioridad TEXT,
+                operario TEXT,
+                observaciones_cierre TEXT,
+                fecha_cierre TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                origen TEXT,
+                solicitante TEXT,
+                fecha_origen TEXT
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS contador_ot (
+                id SERIAL PRIMARY KEY,
+                centro_codigo TEXT NOT NULL,
+                tipo_codigo TEXT NOT NULL,
+                ultimo_numero INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (centro_codigo, tipo_codigo)
+            )
+        """)
+
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    inicializar_db_api()
+
+
 def limpiar_texto(valor):
     if valor is None:
         return ""
@@ -201,7 +267,7 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
                 datos["area"],
                 datos["prioridad"],
                 datos["operario"],
-                "OUTLOOK",
+                "WEB",
                 datos["solicitante"],
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
