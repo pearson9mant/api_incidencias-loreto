@@ -248,7 +248,12 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
     cur = conn.cursor()
 
     try:
-        numero_ot = obtener_siguiente_numero_ot(cur, datos["centro"], "INC")
+        descripcion_lower = datos["descripcion"].lower()
+        area_lower = datos["area"].lower()
+
+        tipo_ot = "LEG" if "legionella" in descripcion_lower or "legionella" in area_lower else "INC"
+
+        numero_ot = obtener_siguiente_numero_ot(cur, datos["centro"], tipo_ot)
 
         cur.execute(
             """
