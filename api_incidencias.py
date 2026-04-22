@@ -116,30 +116,59 @@ def extraer_campos(body: str, asunto: str, remitente: str):
     }
 
 
-def obtener_siguiente_numero_ot(cur):
-    cur.execute("SELECT numero_ot FROM ordenes_trabajo WHERE numero_ot IS NOT NULL")
-    activas = cur.fetchall()
+def obtener_codigo_centro(centro):
+    centro = str(centro or "").strip().lower()
 
-    cur.execute("SELECT numero_ot FROM historico_ordenes WHERE numero_ot IS NOT NULL")
-    historicas = cur.fetchall()
+    if centro in ("pearson 22", "pearson22", "p22"):
+        return "P22"
 
-    numeros = []
-    for fila in activas + historicas:
-        valor = fila[0]
-        if not valor:
-            continue
-        texto = str(valor).strip().upper()
-        try:
-            if texto.startswith("OT-"):
-                numero = int(texto.replace("OT-", "").strip())
-            else:
-                numero = int(texto)
-            numeros.append(numero)
-        except Exception:
-            pass
+    if centro in ("pearson 9", "pearson9", "p9"):
+        return "P9"
 
-    siguiente = max(numeros) + 1 if numeros else 1
-    return f"OT-{siguiente:05d}"
+    return "GEN"
+
+
+def obtener_codigo_tipo(tipo_ot="INC"):
+    tipo_ot = str(tipo_ot or "").strip().upper()
+
+    if tipo_ot in ("LEG", "LEGIONELLA"):
+        return "LEG"
+
+    if tipo_ot in ("PREV", "PREVENTIVO"):
+        return "PREV"
+
+    return "INC"
+
+
+def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
+    centro_codigo = obtener_codigo_centro(centro)
+    tipo_codigo = obtener_codigo_tipo(tipo_ot)
+
+    cur.execute("""
+        SELECT ultimo_numero
+        FROM contador_ot
+        WHERE centro_codigo = %s AND tipo_codigo = %s
+    """, (centro_codigo, tipo_codigo))
+
+    fila = cur.fetchone()
+
+    if fila:
+        siguiente = int(fila[0]) + 1
+
+        cur.execute("""
+            UPDATE contador_ot
+            SET ultimo_numero = %s
+            WHERE centro_codigo = %s AND tipo_codigo = %s
+        """, (siguiente, centro_codigo, tipo_codigo))
+    else:
+        siguiente = 1
+
+        cur.execute("""
+            INSERT INTO contador_ot (centro_codigo, tipo_codigo, ultimo_numero)
+            VALUES (%s, %s, %s)
+        """, (centro_codigo, tipo_codigo, siguiente))
+
+    return f"{centro_codigo}-{tipo_codigo}-{siguiente:05d}"
 
 
 @app.post("/api/incidencias")
@@ -153,7 +182,7 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
     cur = conn.cursor()
 
     try:
-        numero_ot = obtener_siguiente_numero_ot(cur)
+        numero_ot = obtener_siguiente_numero_ot(cur, datos["centro"], "INC")
 
         cur.execute(
             """
