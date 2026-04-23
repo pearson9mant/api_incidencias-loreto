@@ -290,7 +290,7 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
         )
 
         conn.commit()
-        return {"ok": True, "numero_ot": numero_ot, "datos": datos}
+        return {"ok": True, "numero_ot": numero_ot, "datos": datos, "tipo_ot": tipo_ot}
     finally:
         cur.close()
         conn.close()
