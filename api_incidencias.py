@@ -318,10 +318,6 @@ def crear_incidencia(
 
         conn.commit()
         return {"ok": True, "numero_ot": numero_ot, "datos": datos, "tipo_ot": tipo_ot}
-
-    finally:
-        cur.close()
-        conn.close()
 @app.get("/test-db")
 def test_db():
     conn = conectar()
@@ -339,3 +335,7 @@ def test_db():
     finally:
         cur.close()
         conn.close()
+    finally:
+        cur.close()
+        conn.close()
+
