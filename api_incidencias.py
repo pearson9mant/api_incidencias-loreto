@@ -30,6 +30,14 @@ class IncidenciaIn(BaseModel):
     body: str = ""
     remitente: str = ""
 
+    centro: str = ""
+    edificio: str = ""
+    espacio: str = ""
+    descripcion: str = ""
+    prioridad: str = ""
+    solicitante: str = ""
+    area: str = ""
+
 
 def conectar():
     database_url = os.getenv("DATABASE_URL")
@@ -250,11 +258,33 @@ def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
 
 
 @app.post("/api/incidencias")
-def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(default="")):
-    if not WEBHOOK_TOKEN or x_webhook_token != WEBHOOK_TOKEN:
+@app.post("/incidencia")
+def crear_incidencia(
+    payload: IncidenciaIn,
+    x_webhook_token: str = Header(default=""),
+    x_token: str = Header(default="")
+):
+    token_recibido = x_webhook_token or x_token
+
+    if not WEBHOOK_TOKEN or token_recibido != WEBHOOK_TOKEN:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    datos = extraer_campos(payload.body, payload.asunto, payload.remitente)
+    # Formato antiguo / Power Automate estructurado
+    if payload.centro or payload.descripcion:
+        datos = {
+            "centro": normalizar_centro(payload.centro),
+            "edificio": limpiar_texto(payload.edificio),
+            "espacio": limpiar_texto(payload.espacio),
+            "descripcion": limpiar_texto(payload.descripcion) or limpiar_texto(payload.asunto),
+            "prioridad": normalizar_prioridad(payload.prioridad),
+            "solicitante": limpiar_texto(payload.solicitante) or limpiar_texto(payload.remitente),
+            "area": limpiar_texto(payload.area) or "Otros",
+        }
+        datos["operario"] = operario_por_centro(datos["centro"])
+
+    # Formato nuevo por body
+    else:
+        datos = extraer_campos(payload.body, payload.asunto, payload.remitente)
 
     conn = conectar()
     cur = conn.cursor()
@@ -288,6 +318,7 @@ def crear_incidencia(payload: IncidenciaIn, x_webhook_token: str = Header(defaul
 
         conn.commit()
         return {"ok": True, "numero_ot": numero_ot, "datos": datos, "tipo_ot": tipo_ot}
+
     finally:
         cur.close()
         conn.close()
