@@ -322,3 +322,20 @@ def crear_incidencia(
     finally:
         cur.close()
         conn.close()
+@app.get("/test-db")
+def test_db():
+    conn = conectar()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT numero_ot, descripcion, centro
+            FROM ordenes_trabajo
+            ORDER BY id DESC
+            LIMIT 5
+        """)
+        datos = cur.fetchall()
+        return {"datos": datos}
+    finally:
+        cur.close()
+        conn.close()
