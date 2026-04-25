@@ -1,8 +1,9 @@
 import os
 import re
+import json
 from datetime import datetime
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import psycopg2
@@ -12,7 +13,7 @@ app = FastAPI(title="API Incidencias")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -29,7 +30,6 @@ class IncidenciaIn(BaseModel):
     asunto: str = ""
     body: str = ""
     remitente: str = ""
-
     centro: str = ""
     edificio: str = ""
     espacio: str = ""
@@ -49,7 +49,6 @@ def conectar():
 def inicializar_db_api():
     conn = conectar()
     cur = conn.cursor()
-
     try:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS ordenes_trabajo (
@@ -215,11 +214,9 @@ def detectar_tipo_ot(datos):
     area_lower = str(datos.get("area", "")).strip().lower()
     descripcion_lower = str(datos.get("descripcion", "")).strip().lower()
 
-    # Prioridad al campo estructurado
     if area_lower == "legionella":
         return "LEG"
 
-    # Respaldo para no romper lo que ya funciona
     if "legionella" in descripcion_lower:
         return "LEG"
 
@@ -240,7 +237,6 @@ def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
 
     if fila:
         siguiente = int(fila[0]) + 1
-
         cur.execute("""
             UPDATE contador_ot
             SET ultimo_numero = %s
@@ -248,7 +244,6 @@ def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
         """, (siguiente, centro_codigo, tipo_codigo))
     else:
         siguiente = 1
-
         cur.execute("""
             INSERT INTO contador_ot (centro_codigo, tipo_codigo, ultimo_numero)
             VALUES (%s, %s, %s)
@@ -257,35 +252,7 @@ def obtener_siguiente_numero_ot(cur, centro, tipo_ot="INC"):
     return f"{centro_codigo}-{tipo_codigo}-{siguiente:05d}"
 
 
-@app.post("/api/incidencias")
-@app.post("/incidencia")
-def crear_incidencia(
-    payload: IncidenciaIn,
-    x_webhook_token: str = Header(default=""),
-    x_token: str = Header(default="")
-):
-    token_recibido = x_webhook_token or x_token
-
-    if not WEBHOOK_TOKEN or token_recibido != WEBHOOK_TOKEN:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-    # Formato antiguo / Power Automate estructurado
-    if payload.centro or payload.descripcion:
-        datos = {
-            "centro": normalizar_centro(payload.centro),
-            "edificio": limpiar_texto(payload.edificio),
-            "espacio": limpiar_texto(payload.espacio),
-            "descripcion": limpiar_texto(payload.descripcion) or limpiar_texto(payload.asunto),
-            "prioridad": normalizar_prioridad(payload.prioridad),
-            "solicitante": limpiar_texto(payload.solicitante) or limpiar_texto(payload.remitente),
-            "area": limpiar_texto(payload.area) or "Otros",
-        }
-        datos["operario"] = operario_por_centro(datos["centro"])
-
-    # Formato nuevo por body
-    else:
-        datos = extraer_campos(payload.body, payload.asunto, payload.remitente)
-
+def insertar_ot(datos):
     conn = conectar()
     cur = conn.cursor()
 
@@ -318,6 +285,58 @@ def crear_incidencia(
 
         conn.commit()
         return {"ok": True, "numero_ot": numero_ot, "datos": datos, "tipo_ot": tipo_ot}
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/incidencias")
+@app.post("/incidencia")
+def crear_incidencia(
+    payload: IncidenciaIn,
+    x_webhook_token: str = Header(default=""),
+    x_token: str = Header(default="")
+):
+    token_recibido = x_webhook_token or x_token
+
+    if not WEBHOOK_TOKEN or token_recibido != WEBHOOK_TOKEN:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    if payload.centro or payload.descripcion:
+        datos = {
+            "centro": normalizar_centro(payload.centro),
+            "edificio": limpiar_texto(payload.edificio),
+            "espacio": limpiar_texto(payload.espacio),
+            "descripcion": limpiar_texto(payload.descripcion) or limpiar_texto(payload.asunto),
+            "prioridad": normalizar_prioridad(payload.prioridad),
+            "solicitante": limpiar_texto(payload.solicitante) or limpiar_texto(payload.remitente),
+            "area": limpiar_texto(payload.area) or "Otros",
+        }
+        datos["operario"] = operario_por_centro(datos["centro"])
+    else:
+        datos = extraer_campos(payload.body, payload.asunto, payload.remitente)
+
+    return insertar_ot(datos)
+
+
+@app.post("/incidencia-beacon")
+async def incidencia_beacon(request: Request, token: str = ""):
+    if not WEBHOOK_TOKEN or token != WEBHOOK_TOKEN:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    raw = await request.body()
+    payload = json.loads(raw.decode("utf-8"))
+
+    datos = extraer_campos(
+        payload.get("body", ""),
+        payload.get("asunto", ""),
+        payload.get("remitente", "")
+    )
+
+    return insertar_ot(datos)
+
+
 @app.get("/test-db")
 def test_db():
     conn = conectar()
@@ -335,7 +354,3 @@ def test_db():
     finally:
         cur.close()
         conn.close()
-    finally:
-        cur.close()
-        conn.close()
-
